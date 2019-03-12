@@ -742,11 +742,12 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                 _elementSelector = elementSelector;
             }
 
-            public IAsyncEnumerator<IGrouping<TKey, TElement>> GetEnumerator()
-                => new GroupByAsyncEnumerator(this);
+            public IAsyncEnumerator<IGrouping<TKey, TElement>> GetAsyncEnumerator(CancellationToken cancellationToken = default)
+                => new GroupByAsyncEnumerator(this, cancellationToken);
 
             private sealed class GroupByAsyncEnumerator : IAsyncEnumerator<IGrouping<TKey, TElement>>
             {
+                private readonly CancellationToken _cancellationToken;
                 private readonly AsyncGroupByAsyncEnumerable<TSource, TKey, TElement> _groupByAsyncEnumerable;
                 private readonly IEqualityComparer<TKey> _comparer;
 
@@ -754,26 +755,27 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                 private bool _hasNext;
 
                 public GroupByAsyncEnumerator(
-                    AsyncGroupByAsyncEnumerable<TSource, TKey, TElement> groupByAsyncEnumerable)
+                    AsyncGroupByAsyncEnumerable<TSource, TKey, TElement> groupByAsyncEnumerable, CancellationToken cancellationToken = default)
                 {
                     _groupByAsyncEnumerable = groupByAsyncEnumerable;
                     _comparer = EqualityComparer<TKey>.Default;
+                    _cancellationToken = cancellationToken;
                 }
 
-                public async Task<bool> MoveNext(CancellationToken cancellationToken)
+                public async ValueTask<bool> MoveNextAsync()
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    _cancellationToken.ThrowIfCancellationRequested();
 
                     if (_sourceEnumerator == null)
                     {
-                        _sourceEnumerator = _groupByAsyncEnumerable._source.GetEnumerator();
-                        _hasNext = await _sourceEnumerator.MoveNext(cancellationToken);
+                        _sourceEnumerator = _groupByAsyncEnumerable._source.GetAsyncEnumerator(_cancellationToken);
+                        _hasNext = await _sourceEnumerator.MoveNextAsync();
                     }
 
                     if (_hasNext)
                     {
                         var currentKey = _groupByAsyncEnumerable._keySelector(_sourceEnumerator.Current);
-                        var element = await _groupByAsyncEnumerable._elementSelector(_sourceEnumerator.Current, cancellationToken);
+                        var element = await _groupByAsyncEnumerable._elementSelector(_sourceEnumerator.Current, _cancellationToken);
                         var grouping = new Grouping<TKey, TElement>(currentKey)
                         {
                             element
@@ -781,7 +783,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
 
                         while (true)
                         {
-                            _hasNext = await _sourceEnumerator.MoveNext(cancellationToken);
+                            _hasNext = await _sourceEnumerator.MoveNextAsync();
 
                             if (!_hasNext)
                             {
@@ -795,7 +797,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                                 break;
                             }
 
-                            grouping.Add(await _groupByAsyncEnumerable._elementSelector(_sourceEnumerator.Current, cancellationToken));
+                            grouping.Add(await _groupByAsyncEnumerable._elementSelector(_sourceEnumerator.Current, _cancellationToken));
                         }
 
                         Current = grouping;
@@ -808,7 +810,11 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
 
                 public IGrouping<TKey, TElement> Current { get; private set; }
 
-                public void Dispose() => _sourceEnumerator?.Dispose();
+                public async ValueTask DisposeAsync()
+                {
+                    if (_sourceEnumerator != null)
+                        await _sourceEnumerator.DisposeAsync();
+                }
             }
         }
 

@@ -82,23 +82,23 @@ namespace Microsoft.EntityFrameworkCore.Cosmos.Query.Expressions.Internal
                 _shaper = shaper;
             }
 
-            public IAsyncEnumerator<T> GetEnumerator() => new AsyncShaperEnumerator(this);
+            public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default) => new AsyncShaperEnumerator(this, cancellationToken);
 
             private class AsyncShaperEnumerator : IAsyncEnumerator<T>
             {
                 private readonly IAsyncEnumerator<JObject> _enumerator;
                 private readonly Func<JObject, T> _shaper;
 
-                public AsyncShaperEnumerator(AsyncShaperEnumerable<T> enumerable)
+                public AsyncShaperEnumerator(AsyncShaperEnumerable<T> enumerable, CancellationToken cancellationToken = default)
                 {
-                    _enumerator = enumerable._innerEnumerable.GetEnumerator();
+                    _enumerator = enumerable._innerEnumerable.GetAsyncEnumerator(cancellationToken);
                     _shaper = enumerable._shaper;
                 }
 
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                public async Task<bool> MoveNext(CancellationToken cancellationToken)
+                public async ValueTask<bool> MoveNextAsync()
                 {
-                    if (!await _enumerator.MoveNext(cancellationToken))
+                    if (!await _enumerator.MoveNextAsync())
                     {
                         Current = default;
                         return false;
@@ -110,7 +110,7 @@ namespace Microsoft.EntityFrameworkCore.Cosmos.Query.Expressions.Internal
 
                 public T Current { get; private set; }
 
-                public void Dispose() => _enumerator.Dispose();
+                public async ValueTask DisposeAsync() => await _enumerator.DisposeAsync();
             }
         }
 

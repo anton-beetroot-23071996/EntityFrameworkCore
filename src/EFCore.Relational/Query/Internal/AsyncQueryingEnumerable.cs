@@ -41,10 +41,11 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
         ///     This API supports the Entity Framework Core infrastructure and is not intended to be used
         ///     directly from your code. This API may change or be removed in future releases.
         /// </summary>
-        public virtual IAsyncEnumerator<T> GetEnumerator() => new AsyncEnumerator(this);
+        public virtual IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default) => new AsyncEnumerator(this, cancellationToken);
 
         private sealed class AsyncEnumerator : IAsyncEnumerator<T>, IBufferable
         {
+            private readonly CancellationToken _cancellationToken;
             private readonly RelationalQueryContext _relationalQueryContext;
             private readonly ShaperCommandContext _shaperCommandContext;
             private readonly IShaper<T> _shaper;
@@ -58,23 +59,24 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
 
             private bool _disposed;
 
-            public AsyncEnumerator(AsyncQueryingEnumerable<T> queryingEnumerable)
+            public AsyncEnumerator(AsyncQueryingEnumerable<T> queryingEnumerable, CancellationToken cancellationToken = default)
             {
                 _shaperCommandContext = queryingEnumerable._shaperCommandContext;
                 _valueBufferFactory = _shaperCommandContext.ValueBufferFactory;
                 _relationalQueryContext = queryingEnumerable._relationalQueryContext;
                 _shaper = queryingEnumerable._shaper;
                 _bufferlessMoveNext = BufferlessMoveNext;
+                _cancellationToken = cancellationToken;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public async Task<bool> MoveNext(CancellationToken cancellationToken)
+            public async ValueTask<bool> MoveNextAsync()
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                _cancellationToken.ThrowIfCancellationRequested();
 
                 try
                 {
-                    await _relationalQueryContext.Connection.Semaphore.WaitAsync(cancellationToken);
+                    await _relationalQueryContext.Connection.Semaphore.WaitAsync(_cancellationToken);
 
                     if (_buffer == null)
                     {
@@ -84,7 +86,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                         }
 
                         return await _executionStrategy
-                            .ExecuteAsync(_executionStrategy.RetriesOnFailure, _bufferlessMoveNext, null, cancellationToken);
+                            .ExecuteAsync(_executionStrategy.RetriesOnFailure, _bufferlessMoveNext, null, _cancellationToken);
                     }
 
                     if (_buffer.Count > 0)
@@ -205,7 +207,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                 }
             }
 
-            public void Dispose()
+            public ValueTask DisposeAsync()
             {
                 if (!_disposed)
                 {
@@ -232,6 +234,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                         _relationalQueryContext.Connection.Semaphore.Release();
                     }
                 }
+                return new ValueTask(Task.CompletedTask);
             }
         }
     }

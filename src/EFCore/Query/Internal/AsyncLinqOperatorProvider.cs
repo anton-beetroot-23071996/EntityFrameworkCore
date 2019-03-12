@@ -49,7 +49,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
 
             public EnumerableAdapter(IAsyncEnumerable<TResult> results) => Results = results;
 
-            IAsyncEnumerator<TResult> IAsyncEnumerable<TResult>.GetEnumerator() => Results.GetEnumerator();
+            IAsyncEnumerator<TResult> IAsyncEnumerable<TResult>.GetAsyncEnumerator(CancellationToken cancellationToken) => Results.GetAsyncEnumerator(cancellationToken);
 
             IEnumerator<TResult> IEnumerable<TResult>.GetEnumerator() => Results.ToEnumerable().GetEnumerator();
 
@@ -84,6 +84,18 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                 => !descending
                     ? Results.OrderBy(keySelector, comparer)
                     : Results.OrderByDescending(keySelector, comparer);
+
+            IOrderedAsyncEnumerable<TResult> IOrderedAsyncEnumerable<TResult>.CreateOrderedEnumerable<TKey>(
+                Func<TResult, ValueTask<TKey>> keySelector, IComparer<TKey> comparer, bool descending)
+                => !descending
+                    ? Results.OrderByAwait(keySelector, comparer)
+                    : Results.OrderByDescendingAwait(keySelector, comparer);
+
+            IOrderedAsyncEnumerable<TResult> IOrderedAsyncEnumerable<TResult>.CreateOrderedEnumerable<TKey>(
+                Func<TResult, CancellationToken, ValueTask<TKey>> keySelector, IComparer<TKey> comparer, bool descending)
+                => !descending
+                    ? Results.OrderByAwaitWithCancellation(keySelector, comparer)
+                    : Results.OrderByDescendingAwaitWithCancellation(keySelector, comparer);
 
             IOrderedEnumerable<TResult> IOrderedEnumerable<TResult>.CreateOrderedEnumerable<TKey>(
                 Func<TResult, TKey> keySelector, IComparer<TKey> comparer, bool descending)
@@ -127,18 +139,21 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                 _queryContext = queryContext;
             }
 
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public IAsyncEnumerator<T> GetEnumerator() => new EnumeratorExceptionInterceptor(this);
+            public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default) => new EnumeratorExceptionInterceptor(this, cancellationToken);
 
             [DebuggerStepThrough]
             private sealed class EnumeratorExceptionInterceptor : IAsyncEnumerator<T>
             {
+                private readonly CancellationToken _cancellationToken;
                 private readonly ExceptionInterceptor<T> _exceptionInterceptor;
                 private IAsyncEnumerator<T> _innerEnumerator;
 
-                public EnumeratorExceptionInterceptor(ExceptionInterceptor<T> exceptionInterceptor)
+                public EnumeratorExceptionInterceptor(ExceptionInterceptor<T> exceptionInterceptor, CancellationToken cancellationToken = default)
                 {
                     _exceptionInterceptor = exceptionInterceptor;
+                    _cancellationToken = cancellationToken;
                 }
 
                 public T Current
@@ -148,19 +163,19 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                 }
 
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                public async Task<bool> MoveNext(CancellationToken cancellationToken)
+                public async ValueTask<bool> MoveNextAsync()
                 {
                     using (await _exceptionInterceptor._queryContext.ConcurrencyDetector
-                        .EnterCriticalSectionAsync(cancellationToken))
+                        .EnterCriticalSectionAsync(_cancellationToken))
                     {
                         try
                         {
                             if (_innerEnumerator == null)
                             {
-                                _innerEnumerator = _exceptionInterceptor._innerAsyncEnumerable.GetEnumerator();
+                                _innerEnumerator = _exceptionInterceptor._innerAsyncEnumerable.GetAsyncEnumerator();
                             }
 
-                            return await _innerEnumerator.MoveNext(cancellationToken);
+                            return await _innerEnumerator.MoveNextAsync();
                         }
                         catch (Exception exception)
                         {
@@ -171,9 +186,10 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                     }
                 }
 
-                public void Dispose()
+                public async ValueTask DisposeAsync()
                 {
-                    _innerEnumerator?.Dispose();
+                    if (_innerEnumerator != null)
+                        await _innerEnumerator.DisposeAsync();
                     _exceptionInterceptor._queryContext.Dispose();
                 }
             }
@@ -272,12 +288,12 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                 _entityAccessors = entityAccessors;
             }
 
-            public IAsyncEnumerator<IGrouping<TKey, TElement>> GetEnumerator()
+            public IAsyncEnumerator<IGrouping<TKey, TElement>> GetAsyncEnumerator(CancellationToken cancellationToken = default)
             {
                 _queryContext.BeginTrackingQuery();
 
                 return new Enumerator(
-                    _groupings.GetEnumerator(),
+                    _groupings.GetAsyncEnumerator(cancellationToken),
                     _queryContext,
                     _entityTrackingInfos,
                     _entityAccessors);
@@ -302,9 +318,9 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                     _entityAccessors = entityAccessors;
                 }
 
-                public async Task<bool> MoveNext(CancellationToken cancellationToken)
+                public async ValueTask<bool> MoveNextAsync()
                 {
-                    if (!await _asyncEnumerator.MoveNext())
+                    if (!await _asyncEnumerator.MoveNextAsync())
                     {
                         return false;
                     }
@@ -334,7 +350,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
 
                 public IGrouping<TKey, TElement> Current { get; private set; }
 
-                public void Dispose() => _asyncEnumerator.Dispose();
+                public async ValueTask DisposeAsync() => await _asyncEnumerator.DisposeAsync();
             }
         }
 
@@ -376,18 +392,23 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
             ///     This API supports the Entity Framework Core infrastructure and is not intended to be used
             ///     directly from your code. This API may change or be removed in future releases.
             /// </summary>
-            public IAsyncEnumerator<T> GetEnumerator() => new Enumerator(_getElement());
+            public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default) => new Enumerator(_getElement());
 
             private sealed class Enumerator : IAsyncEnumerator<T>
             {
+                private readonly CancellationToken _cancellationToken;
                 private readonly Task<T> _task;
                 private bool _moved;
 
-                public Enumerator(Task<T> task) => _task = task;
-
-                public async Task<bool> MoveNext(CancellationToken cancellationToken)
+                public Enumerator(Task<T> task, CancellationToken cancellationToken = default)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    _task = task;
+                    _cancellationToken = cancellationToken;
+                }
+
+                public async ValueTask<bool> MoveNextAsync()
+                {
+                    _cancellationToken.ThrowIfCancellationRequested();
 
                     if (!_moved)
                     {
@@ -403,9 +424,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
 
                 public T Current => !_moved ? default : _task.Result;
 
-                void IDisposable.Dispose()
-                {
-                }
+                public ValueTask DisposeAsync() => new ValueTask(Task.CompletedTask);
             }
         }
 
@@ -574,34 +593,36 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                 _selector = selector;
             }
 
-            public IAsyncEnumerator<TResult> GetEnumerator() => new AsyncSelectEnumerator(this);
+            public IAsyncEnumerator<TResult> GetAsyncEnumerator(CancellationToken cancellationToken = default) => new AsyncSelectEnumerator(this, cancellationToken);
 
             private class AsyncSelectEnumerator : IAsyncEnumerator<TResult>
             {
+                private readonly CancellationToken _cancellationToken;
                 private readonly IAsyncEnumerator<TSource> _enumerator;
                 private readonly Func<TSource, CancellationToken, Task<TResult>> _selector;
 
-                public AsyncSelectEnumerator(AsyncSelectEnumerable<TSource, TResult> enumerable)
+                public AsyncSelectEnumerator(AsyncSelectEnumerable<TSource, TResult> enumerable, CancellationToken cancellationToken = default)
                 {
-                    _enumerator = enumerable._source.GetEnumerator();
+                    _enumerator = enumerable._source.GetAsyncEnumerator(cancellationToken);
                     _selector = enumerable._selector;
+                    _cancellationToken = cancellationToken;
                 }
 
-                public async Task<bool> MoveNext(CancellationToken cancellationToken)
+                public async ValueTask<bool> MoveNextAsync()
                 {
-                    if (!await _enumerator.MoveNext(cancellationToken))
+                    if (!await _enumerator.MoveNextAsync(_cancellationToken))
                     {
                         return false;
                     }
 
-                    Current = await _selector(_enumerator.Current, cancellationToken);
+                    Current = await _selector(_enumerator.Current, _cancellationToken);
 
                     return true;
                 }
 
                 public TResult Current { get; private set; }
 
-                public void Dispose() => _enumerator.Dispose();
+                public async ValueTask DisposeAsync() => await _enumerator.DisposeAsync();
             }
         }
 

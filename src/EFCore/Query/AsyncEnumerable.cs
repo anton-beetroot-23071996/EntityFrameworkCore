@@ -53,9 +53,9 @@ namespace Microsoft.EntityFrameworkCore.Query
         {
             var list = new List<TResult>();
 
-            using (var asyncEnumerator = _asyncEnumerable.GetEnumerator())
+            await using (var asyncEnumerator = _asyncEnumerable.GetAsyncEnumerator(cancellationToken))
             {
-                while (await asyncEnumerator.MoveNext(cancellationToken))
+                while (await asyncEnumerator.MoveNextAsync())
                 {
                     list.Add(asyncEnumerator.Current);
                 }
@@ -94,9 +94,9 @@ namespace Microsoft.EntityFrameworkCore.Query
         public async Task LoadAsync(
             CancellationToken cancellationToken = default)
         {
-            using (var enumerator = _asyncEnumerable.GetEnumerator())
+            await using (var enumerator = _asyncEnumerable.GetAsyncEnumerator(cancellationToken))
             {
-                while (await enumerator.MoveNext(cancellationToken))
+                while (await enumerator.MoveNextAsync())
                 {
                 }
             }
@@ -121,13 +121,13 @@ namespace Microsoft.EntityFrameworkCore.Query
         ///     A task that represents the asynchronous operation.
         ///     The task result contains a <see cref="Dictionary{TKey, TResult}" /> that contains selected keys and values.
         /// </returns>
-        public Task<Dictionary<TKey, TResult>> ToDictionaryAsync<TKey>(
+        public async Task<Dictionary<TKey, TResult>> ToDictionaryAsync<TKey>(
             [NotNull] Func<TResult, TKey> keySelector,
             CancellationToken cancellationToken = default)
         {
             Check.NotNull(keySelector, nameof(keySelector));
 
-            return _asyncEnumerable.ToDictionary(keySelector, cancellationToken);
+            return await _asyncEnumerable.ToDictionaryAsync(keySelector, cancellationToken);
         }
 
         /// <summary>
@@ -154,7 +154,7 @@ namespace Microsoft.EntityFrameworkCore.Query
         ///     A task that represents the asynchronous operation.
         ///     The task result contains a <see cref="Dictionary{TKey, TResult}" /> that contains selected keys and values.
         /// </returns>
-        public Task<Dictionary<TKey, TResult>> ToDictionaryAsync<TKey>(
+        public async Task<Dictionary<TKey, TResult>> ToDictionaryAsync<TKey>(
             [NotNull] Func<TResult, TKey> keySelector,
             [NotNull] IEqualityComparer<TKey> comparer,
             CancellationToken cancellationToken = default)
@@ -162,7 +162,7 @@ namespace Microsoft.EntityFrameworkCore.Query
             Check.NotNull(keySelector, nameof(keySelector));
             Check.NotNull(comparer, nameof(comparer));
 
-            return _asyncEnumerable.ToDictionary(keySelector, comparer, cancellationToken);
+            return await _asyncEnumerable.ToDictionaryAsync(keySelector, comparer, cancellationToken);
         }
 
         /// <summary>
@@ -189,7 +189,7 @@ namespace Microsoft.EntityFrameworkCore.Query
         ///     The task result contains a <see cref="Dictionary{TKey, TElement}" /> that contains values of type
         ///     <typeparamref name="TElement" /> selected from the input sequence.
         /// </returns>
-        public Task<Dictionary<TKey, TElement>> ToDictionaryAsync<TKey, TElement>(
+        public async Task<Dictionary<TKey, TElement>> ToDictionaryAsync<TKey, TElement>(
             [NotNull] Func<TResult, TKey> keySelector,
             [NotNull] Func<TResult, TElement> elementSelector,
             CancellationToken cancellationToken = default)
@@ -197,7 +197,7 @@ namespace Microsoft.EntityFrameworkCore.Query
             Check.NotNull(keySelector, nameof(keySelector));
             Check.NotNull(elementSelector, nameof(elementSelector));
 
-            return _asyncEnumerable.ToDictionary(keySelector, elementSelector, cancellationToken);
+            return await _asyncEnumerable.ToDictionaryAsync(keySelector, elementSelector, cancellationToken);
         }
 
         /// <summary>
@@ -227,7 +227,7 @@ namespace Microsoft.EntityFrameworkCore.Query
         ///     The task result contains a <see cref="Dictionary{TKey, TElement}" /> that contains values of type
         ///     <typeparamref name="TElement" /> selected from the input sequence.
         /// </returns>
-        public Task<Dictionary<TKey, TElement>> ToDictionaryAsync<TKey, TElement>(
+        public async Task<Dictionary<TKey, TElement>> ToDictionaryAsync<TKey, TElement>(
             [NotNull] Func<TResult, TKey> keySelector,
             [NotNull] Func<TResult, TElement> elementSelector,
             [NotNull] IEqualityComparer<TKey> comparer,
@@ -237,7 +237,7 @@ namespace Microsoft.EntityFrameworkCore.Query
             Check.NotNull(elementSelector, nameof(elementSelector));
             Check.NotNull(comparer, nameof(comparer));
 
-            return _asyncEnumerable.ToDictionary(keySelector, elementSelector, comparer, cancellationToken);
+            return await _asyncEnumerable.ToDictionaryAsync(keySelector, elementSelector, comparer, cancellationToken);
         }
 
         /// <summary>
@@ -258,9 +258,9 @@ namespace Microsoft.EntityFrameworkCore.Query
         {
             Check.NotNull(action, nameof(action));
 
-            using (var asyncEnumerator = _asyncEnumerable.GetEnumerator())
+            await using (var asyncEnumerator = _asyncEnumerable.GetAsyncEnumerator(cancellationToken))
             {
-                while (await asyncEnumerator.MoveNext(cancellationToken))
+                while (await asyncEnumerator.MoveNextAsync())
                 {
                     action(asyncEnumerator.Current);
                 }

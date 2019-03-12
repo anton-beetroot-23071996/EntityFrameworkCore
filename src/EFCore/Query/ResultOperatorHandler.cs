@@ -306,11 +306,12 @@ namespace Microsoft.EntityFrameworkCore.Query
                 _elementSelector = elementSelector;
             }
 
-            public IAsyncEnumerator<IGrouping<TKey, TElement>> GetEnumerator()
+            public IAsyncEnumerator<IGrouping<TKey, TElement>> GetAsyncEnumerator(CancellationToken cancellationToken = default)
                 => new GroupByAsyncEnumerator(this);
 
             private sealed class GroupByAsyncEnumerator : IAsyncEnumerator<IGrouping<TKey, TElement>>
             {
+                private readonly CancellationToken _cancellationToken;
                 private readonly AsyncGroupByAsyncEnumerable<TSource, TKey, TElement> _groupByAsyncEnumerable;
                 private readonly IEqualityComparer<TKey> _comparer;
 
@@ -318,25 +319,26 @@ namespace Microsoft.EntityFrameworkCore.Query
                 private bool _hasNext;
 
                 public GroupByAsyncEnumerator(
-                    AsyncGroupByAsyncEnumerable<TSource, TKey, TElement> groupByAsyncEnumerable)
+                    AsyncGroupByAsyncEnumerable<TSource, TKey, TElement> groupByAsyncEnumerable, CancellationToken cancellationToken = default)
                 {
                     _groupByAsyncEnumerable = groupByAsyncEnumerable;
                     _comparer = EqualityComparer<TKey>.Default;
+                    _cancellationToken = cancellationToken;
                 }
 
-                public async Task<bool> MoveNext(CancellationToken cancellationToken)
+                public async ValueTask<bool> MoveNextAsync()
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    _cancellationToken.ThrowIfCancellationRequested();
 
                     if (_lookupEnumerator == null)
                     {
                         _lookupEnumerator
                             = (await _groupByAsyncEnumerable._source
-                                .ToLookup(
+                                .ToLookupAsync(
                                     _groupByAsyncEnumerable._keySelector,
                                     e => e,
                                     _comparer,
-                                    cancellationToken)).GetEnumerator();
+                                    _cancellationToken)).GetEnumerator();
 
                         _hasNext = _lookupEnumerator.MoveNext();
                     }
@@ -347,7 +349,7 @@ namespace Microsoft.EntityFrameworkCore.Query
 
                         foreach (var item in _lookupEnumerator.Current)
                         {
-                            grouping.Add(await _groupByAsyncEnumerable._elementSelector(item, cancellationToken));
+                            grouping.Add(await _groupByAsyncEnumerable._elementSelector(item, _cancellationToken));
                         }
 
                         Current = grouping;
@@ -362,7 +364,11 @@ namespace Microsoft.EntityFrameworkCore.Query
 
                 public IGrouping<TKey, TElement> Current { get; private set; }
 
-                public void Dispose() => _lookupEnumerator?.Dispose();
+                public ValueTask DisposeAsync()
+                {
+                    _lookupEnumerator?.Dispose();
+                    return new ValueTask(Task.CompletedTask);
+                }
             }
         }
 

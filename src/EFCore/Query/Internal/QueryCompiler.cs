@@ -255,9 +255,9 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
             {
                 var asyncEnumerable = compiledQuery(queryContext);
 
-                using (var asyncEnumerator = asyncEnumerable.GetEnumerator())
+                await using (var asyncEnumerator = asyncEnumerable.GetAsyncEnumerator(queryContext.CancellationToken))
                 {
-                    await asyncEnumerator.MoveNext(queryContext.CancellationToken);
+                    await asyncEnumerator.MoveNextAsync();
 
                     return asyncEnumerator.Current;
                 }

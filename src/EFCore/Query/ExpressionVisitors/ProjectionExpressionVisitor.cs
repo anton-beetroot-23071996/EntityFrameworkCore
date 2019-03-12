@@ -141,7 +141,7 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors
 
         private static readonly MethodInfo _toArrayAsync
             = typeof(AsyncEnumerable).GetTypeInfo()
-                .GetDeclaredMethods(nameof(AsyncEnumerable.ToArray))
+                .GetDeclaredMethods(nameof(AsyncEnumerable.ToArrayAsync))
                 .Single(mi => mi.GetParameters().Length == 2);
 
         private static readonly MethodInfo _materializeCollectionNavigationAsyncMethodInfo

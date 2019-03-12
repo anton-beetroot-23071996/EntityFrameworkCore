@@ -18,9 +18,9 @@ namespace Microsoft.EntityFrameworkCore.TestUtilities
         {
             var list = new List<TSource>();
 
-            using (var e = ((IQueryable<TSource>)source).AsAsyncEnumerable().GetEnumerator())
+            await using (var e = ((IQueryable<TSource>)source).AsAsyncEnumerable().GetAsyncEnumerator(cancellationToken))
             {
-                while (await e.MoveNext(cancellationToken).ConfigureAwait(false))
+                while (await e.MoveNextAsync().ConfigureAwait(false))
                 {
                     list.Add(e.Current);
                 }
